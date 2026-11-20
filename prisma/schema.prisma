@@ -1,0 +1,311 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../generated/prisma"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [pg_trgm, prisma_postgres]
+}
+
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String
+  emailVerified Boolean  @default(false)
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  role       String?   @default("staff")
+  banned     Boolean?  @default(false)
+  banReason  String?
+  banExpires DateTime?
+
+  sessions Session[]
+  accounts Account[]
+
+  blogs Blog[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  impersonatedBy String?
+
+  @@unique([token])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("account")
+}
+
+model Verification {
+  id         String    @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime? @default(now())
+  updatedAt  DateTime? @updatedAt
+
+  @@map("verification")
+}
+
+model Blog {
+  id              String     @id @default(cuid())
+  slug            String     @unique
+  title           String
+  excerpt         String
+  content         String
+  coverImage      String
+  tags            String[]
+  status          BlogStatus @default(DRAFT)
+  metaTitle       String?
+  metaDescription String?
+  publishedAt     DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  authorId String?
+  author   User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@map("blog")
+}
+
+enum BlogStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  subtitle    String?
+  description String? 
+  image       String?
+  icon        String?
+  order       Int      @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  parentId String?
+  parent   Category?  @relation("CategoryToSubcategory", fields: [parentId], references: [id], onDelete: Cascade)
+  children Category[] @relation("CategoryToSubcategory")
+
+  products Product[]
+
+  @@index([parentId, order])
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "category_name_trgm_idx")
+  @@map("category")
+}
+
+model Collection {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String   @unique
+  description String?
+  coverImage  String?
+  order       Int      @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products Product[]
+
+  @@map("collection")
+}
+
+model Product {
+  id               String   @id @default(cuid())
+  slug             String   @unique
+  name             String
+  shortDescription String?
+  description      String
+
+  price          Int?
+  compareAtPrice Int?
+
+  image   String
+  gallery String[]
+
+  featured   Boolean          @default(false)
+  inStock    Boolean          @default(true)
+  stockCount Int?
+  condition  ProductCondition @default(NEW)
+
+  metaTitle       String?
+  metaDescription String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  collections Collection[]
+
+  specs ProductSpec[]
+
+  cartItems          CartItem[]
+  whatsAppOrderItems WhatsAppOrderItem[]
+
+  @@index([categoryId, inStock, price])
+  @@index([featured, inStock, createdAt])
+  @@index([inStock, compareAtPrice])
+
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "product_name_trgm_idx")
+  @@index([description(ops: raw("gin_trgm_ops"))], type: Gin, map: "product_description_trgm_idx")
+
+  @@map("product")
+}
+
+enum ProductCondition {
+  NEW
+  REFURBISHED
+  USED
+}
+
+model ProductSpec {
+  id    String @id @default(cuid())
+  label String
+  value String
+  order Int    @default(0)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([label, value])
+  @@map("product_spec")
+}
+
+model Cart {
+  id        String   @id @default(cuid())
+  sessionId String   @unique
+  userId    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items CartItem[]
+
+  @@index([userId])
+  @@map("cart")
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cartId String
+  cart   Cart   @relation(fields: [cartId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, productId])
+  @@map("cart_item")
+}
+
+model WhatsAppOrder {
+  id            String              @id @default(cuid())
+  customerName  String?
+  customerPhone String?
+  organization  String? 
+  county        String? 
+  message       String
+  notes         String? 
+  source        WhatsAppOrderSource @default(PRODUCT_PAGE)
+  status        WhatsAppOrderStatus @default(CLICKED)
+  
+  totalEstimate Int?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  items WhatsAppOrderItem[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("whatsapp_order")
+}
+
+model WhatsAppOrderItem {
+  id           String @id @default(cuid())
+  quantity     Int    @default(1)
+  
+  priceAtOrder Int?
+
+  whatsAppOrderId String
+  whatsAppOrder   WhatsAppOrder @relation(fields: [whatsAppOrderId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([whatsAppOrderId])
+  @@map("whatsapp_order_item")
+}
+
+enum WhatsAppOrderSource {
+  PRODUCT_PAGE
+  CART
+  QUICK_BUY
+  QUOTE_REQUEST
+  BULK_QUOTE
+}
+
+enum WhatsAppOrderStatus {
+  CLICKED
+  CONTACTED
+  CONFIRMED
+  FULFILLED
+  CANCELLED
+}
+
+model HeroSlide {
+  id          String   @id @default(cuid())
+  eyebrow     String
+  title       String
+  accent      String
+  description String
+  image       String
+  href        String
+  pillTop     String
+  pillBottom  String
+  order       Int      @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("hero_slide")
+}
